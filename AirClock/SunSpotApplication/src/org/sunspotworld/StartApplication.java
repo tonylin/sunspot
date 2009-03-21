@@ -34,6 +34,8 @@ public class StartApplication extends MIDlet {
     private int control = 0;
     private boolean timerSetting = false;
     private int[] timeset = new int[4];
+    private double previous_Z;
+    private double previous_X;
 
     /**
      * The rest is boiler plate code, for Java ME compliance
@@ -65,26 +67,51 @@ public class StartApplication extends MIDlet {
             }
         });
         //Add accelerometer listener
-        accel.enableThresholdEvents(IAccelerometer3D.X_AXIS, true);
+        //We use Z_AXIS to change the control mode and use X_AXIS to increase the time unit
+        accel.setThresholds(IAccelerometer3D.X_AXIS, -1, 1, false);
+        accel.setThresholds(IAccelerometer3D.Z_AXIS, -2, 2, false);
         accel.enableThresholdEvents(IAccelerometer3D.Z_AXIS, true);
-        accel.setThresholds(IAccelerometer3D.X_AXIS, -1, 1, !false);
-        accel.setThresholds(IAccelerometer3D.Z_AXIS, -1, 1, !false);
         accel.addIAccelerometer3DThresholdListener(new IAccelerometer3DThresholdListener() {
 
             public void thresholdChanged(IAccelerometer3D accel, int axis, double low, double high, boolean relative) {
-                System.out.println("threshold changed:"+","+axis+","+low+","+high);
             }
 
             public void thresholdExceeded(IAccelerometer3D accel, int axis, double val, boolean relative) {
-                System.out.println("threshold Exceed:"+axis+","+val);
+                if (axis == IAccelerometer3D.Z_AXIS) {
+//                    System.out.println("Z:" + val);
+                    if (previous_Z < 0 && val > 0) {  //passed the first stage and ready to set the control mode
+                        setControlMode();
+//                        System.out.println("reset Z");
+                        //reset previous_Z so that control mode will not be modified until the next time
+                        accel.enableThresholdEvents(IAccelerometer3D.X_AXIS, true);
+                        previous_Z = 0;
+                    } else {
+                        //init the first stage
+                        previous_Z = val;
+//                        System.out.println("first stage");
+                    }
+                    accel.enableThresholdEvents(IAccelerometer3D.Z_AXIS, true);
+                } else if (axis == IAccelerometer3D.X_AXIS && control > 0) {
+//                    System.out.println("X:" + val);
+                    if (previous_X < 0 && val > 0) {  //passed the first stage and ready to set the control mode
+                        increaseTimeUnit();
+//                        System.out.println("reset X");
+                        //reset previous_Z so that control mode will not be modified until the next time
+                        previous_X = 0;
+                    } else {
+                        //init the first stage
+                        previous_X = val;
+//                        System.out.println("first stage X");
+                    }
+                    accel.enableThresholdEvents(IAccelerometer3D.X_AXIS, true);
+                }
             }
-            
         });
         // Main loop of the application
         while (true) {
             if (control == 0) {
                 disp.setColor(0, 0, 255);
-                disp.swingThis(getTimeText(), 10);
+                disp.swingThis(getTimeText(), 3);
             }
         }
     }
@@ -114,63 +141,63 @@ public class StartApplication extends MIDlet {
      * 0->running, 1->Hour0[0-2], 2->Hour1[0-9],3->Min0[0-5],4->Min1[0-9]
      */
     private void setControlMode() {
-                //set control mode to set the value of each time unit
-                control = (control + 1) % 5;
-                System.out.println("sw1:" + control);
-                clearLED();
-                if (control == 0) {
-                    Calendar cal = Calendar.getInstance();
-                    cal.set(Calendar.HOUR_OF_DAY, timeset[0] * 10 + timeset[1]);
-                    cal.set(Calendar.MINUTE, timeset[2] * 10 + timeset[3]);
-                    System.out.println("set time=" + cal.getTime());
-                    Spot.getInstance().getPowerController().setTime(cal.getTime().getTime());
-                    timerSetting = false;
-                } else {
-                    if (!timerSetting) {
-                        Calendar cal = Calendar.getInstance();
-                        System.out.println("get Time=" + cal.getTime());
-                        int h = cal.get(Calendar.HOUR_OF_DAY);
-                        int m = cal.get(Calendar.MINUTE);
-                        timeset[0] = h / 10;
-                        timeset[1] = h % 10;
-                        timeset[2] = m / 10;
-                        timeset[3] = m % 10;
-                        timerSetting = true;
-                    }
-                    setLED(control - 1, LEDColor.RED);
-                    displayTimeUnit(timeset[control - 1]);
-                }
+        //set control mode to set the value of each time unit
+        control = (control + 1) % 5;
+        System.out.println("sw1:" + control);
+        clearLED();
+        if (control == 0) {
+            Calendar cal = Calendar.getInstance();
+            cal.set(Calendar.HOUR_OF_DAY, timeset[0] * 10 + timeset[1]);
+            cal.set(Calendar.MINUTE, timeset[2] * 10 + timeset[3]);
+            System.out.println("set time=" + cal.getTime());
+            Spot.getInstance().getPowerController().setTime(cal.getTime().getTime());
+            timerSetting = false;
+        } else {
+            if (!timerSetting) {
+                Calendar cal = Calendar.getInstance();
+                System.out.println("get Time=" + cal.getTime());
+                int h = cal.get(Calendar.HOUR_OF_DAY);
+                int m = cal.get(Calendar.MINUTE);
+                timeset[0] = h / 10;
+                timeset[1] = h % 10;
+                timeset[2] = m / 10;
+                timeset[3] = m % 10;
+                timerSetting = true;
+            }
+            setLED(control - 1, LEDColor.RED);
+            displayTimeUnit(timeset[control - 1]);
+        }
     }
 
     /**
      * increase each time unit by press switch 2 if in time setting mode.
      */
     private void increaseTimeUnit() {
-                //increase the time unit
-                System.out.println("sw2:" + control);
-                if(control==0) {
-                    return;
+        //increase the time unit
+        if (control == 0) {
+            return;
+        }
+        System.out.println("sw2:" + control);
+        switch (control) {
+            case 1:
+                timeset[control - 1] = (timeset[control - 1] + 1) % 3;
+                break;
+            case 3:
+                timeset[control - 1] = (timeset[control - 1] + 1) % 6;
+                break;
+            case 2:
+                if (timeset[0] == 2) {
+                    timeset[control - 1] = (timeset[control - 1] + 1) % 4;
+                } else {
+                    timeset[control - 1] = (timeset[control - 1] + 1) % 10;
                 }
-                switch (control) {
-                    case 1:
-                        timeset[control - 1] = (timeset[control - 1] + 1) % 3;
-                        break;
-                    case 3:
-                        timeset[control - 1] = (timeset[control - 1] + 1) % 6;
-                        break;
-                    case 2:
-                        if (timeset[0] == 2) {
-                            timeset[control - 1] = (timeset[control - 1] + 1) % 4;
-                        } else {
-                            timeset[control - 1] = (timeset[control - 1] + 1) % 10;
-                        }
-                        break;
-                    case 4:
-                        timeset[control - 1] = (timeset[control - 1] + 1) % 10;
-                        break;
-                }
-                printTimeSet();
-                displayTimeUnit(timeset[control - 1]);
+                break;
+            case 4:
+                timeset[control - 1] = (timeset[control - 1] + 1) % 10;
+                break;
+        }
+        printTimeSet();
+        displayTimeUnit(timeset[control - 1]);
     }
 
     /**
