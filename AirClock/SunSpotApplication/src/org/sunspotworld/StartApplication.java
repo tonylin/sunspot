@@ -5,16 +5,12 @@
  */
 package org.sunspotworld;
 
-import com.sun.spot.peripheral.Spot;
 import com.sun.spot.sensorboard.EDemoBoard;
 import com.sun.spot.sensorboard.peripheral.IAccelerometer3D;
-import com.sun.spot.sensorboard.peripheral.IAccelerometer3DThresholdListener;
 import com.sun.spot.sensorboard.peripheral.ISwitch;
 import com.sun.spot.sensorboard.peripheral.ISwitchListener;
 import com.sun.spot.sensorboard.peripheral.ITriColorLED;
 
-import com.sun.spot.sensorboard.peripheral.LEDColor;
-import java.util.Calendar;
 import javax.microedition.midlet.MIDlet;
 import javax.microedition.midlet.MIDletStateChangeException;
 
@@ -27,16 +23,23 @@ import javax.microedition.midlet.MIDletStateChangeException;
  */
 public class StartApplication extends MIDlet {
 
-    private final ITriColorLED leds[] = EDemoBoard.getInstance().getLEDs();
+    public final EDemoBoard demoBoard = EDemoBoard.getInstance();
+    public final ITriColorLED leds[] = EDemoBoard.getInstance().getLEDs();
+    public IAccelerometer3D accel = EDemoBoard.getInstance().getAccelerometer();
+    
     private final ISwitch sw1 = EDemoBoard.getInstance().getSwitches()[0];
     private final ISwitch sw2 = EDemoBoard.getInstance().getSwitches()[1];
-    private IAccelerometer3D accel = EDemoBoard.getInstance().getAccelerometer();
-    private int control = 0;
-    private boolean timerSetting = false;
-    private int[] timeset = new int[4];
-    private double previous_Z;
-    private double previous_X;
-
+    
+    public final int STATE_CLOCK = 0;
+    public final int STATE_SET_CLOCK = 1;
+    public final int STATE_SET_TIMER = 2;
+    
+    
+    private IState currentState;
+    private ClockState clock = new ClockState(this);
+    private SetClockState clockSetter = new SetClockState(this);
+    private SetTimerState timerSetter = new SetTimerState( this );
+    
     /**
      * The rest is boiler plate code, for Java ME compliance
      *
@@ -44,14 +47,12 @@ public class StartApplication extends MIDlet {
      */
     protected void startApp() throws MIDletStateChangeException {
         System.out.println("StartApp");
-        // Initialize and start the application
-        EDemoBoard demoBoard = EDemoBoard.getInstance();
-        AirText disp = new AirText(demoBoard);
-        //Initialize switches
+        // Adding the listeners for the switches.
         sw1.addISwitchListener(new ISwitchListener() {
 
             public void switchPressed(ISwitch sw) {
-                setControlMode();
+                System.out.println( "Switch 1 pressed!" );
+                currentState.switch1();
             }
 
             public void switchReleased(ISwitch sw) {
@@ -60,60 +61,37 @@ public class StartApplication extends MIDlet {
         sw2.addISwitchListener(new ISwitchListener() {
 
             public void switchPressed(ISwitch sw) {
-                increaseTimeUnit();
+                System.out.println( "Switch 2 pressed!");
+                currentState.switch2();
             }
 
             public void switchReleased(ISwitch sw) {
             }
         });
-        //Add accelerometer listener
-        //We use Z_AXIS to change the control mode and use X_AXIS to increase the time unit
-        accel.setThresholds(IAccelerometer3D.X_AXIS, -1, 1, false);
-        accel.setThresholds(IAccelerometer3D.Z_AXIS, -2, 2, false);
-        accel.enableThresholdEvents(IAccelerometer3D.Z_AXIS, true);
-        accel.addIAccelerometer3DThresholdListener(new IAccelerometer3DThresholdListener() {
-
-            public void thresholdChanged(IAccelerometer3D accel, int axis, double low, double high, boolean relative) {
-            }
-
-            public void thresholdExceeded(IAccelerometer3D accel, int axis, double val, boolean relative) {
-                if (axis == IAccelerometer3D.Z_AXIS) {
-//                    System.out.println("Z:" + val);
-                    if (previous_Z < 0 && val > 0) {  //passed the first stage and ready to set the control mode
-                        setControlMode();
-//                        System.out.println("reset Z");
-                        //reset previous_Z so that control mode will not be modified until the next time
-                        accel.enableThresholdEvents(IAccelerometer3D.X_AXIS, true);
-                        previous_Z = 0;
-                    } else {
-                        //init the first stage
-                        previous_Z = val;
-//                        System.out.println("first stage");
-                    }
-                    accel.enableThresholdEvents(IAccelerometer3D.Z_AXIS, true);
-                } else if (axis == IAccelerometer3D.X_AXIS && control > 0) {
-//                    System.out.println("X:" + val);
-                    if (previous_X < 0 && val > 0) {  //passed the first stage and ready to set the control mode
-                        increaseTimeUnit();
-//                        System.out.println("reset X");
-                        //reset previous_Z so that control mode will not be modified until the next time
-                        previous_X = 0;
-                    } else {
-                        //init the first stage
-                        previous_X = val;
-//                        System.out.println("first stage X");
-                    }
-                    accel.enableThresholdEvents(IAccelerometer3D.X_AXIS, true);
-                }
-            }
-        });
-        // Main loop of the application
-        while (true) {
-            if (control == 0) {
-                disp.setColor(0, 0, 255);
-                disp.swingThis(getTimeText(), 3);
-            }
+        
+        changeState( STATE_CLOCK );
+    }
+    
+    /**
+     * Change the state
+     * @param state - See constants STATE_*
+     */
+    public void changeState( int state ){
+        System.out.println( "Changing clock state to: " + state );
+        switch( state ){
+            case STATE_CLOCK:
+                currentState = clock;
+                break;
+            case STATE_SET_CLOCK:
+                currentState = clockSetter;
+                break;
+            case STATE_SET_TIMER:
+                currentState = timerSetter;
+                break;
+            default:
+                throw new RuntimeException( "Undefined state for the clock" );
         }
+        currentState.run();
     }
 
     /**
@@ -131,142 +109,15 @@ public class StartApplication extends MIDlet {
      * It is not called if MIDlet.notifyDestroyed() was called.
      */
     protected void destroyApp(boolean arg0) throws MIDletStateChangeException {
-        clearLED();// turn off the LEDs when we exit
+        // turn off the leds
+        for (int i = 0; i < 8; i++) {
+            leds[i].setOff();
+        }
+        
+        // Disable accelerometer events
         accel.enableThresholdEvents(IAccelerometer3D.X_AXIS, false);
         accel.enableThresholdEvents(IAccelerometer3D.Z_AXIS, false);
     }
 
-    /**
-     * Set control mode by press switch 1
-     * 0->running, 1->Hour0[0-2], 2->Hour1[0-9],3->Min0[0-5],4->Min1[0-9]
-     */
-    private void setControlMode() {
-        //set control mode to set the value of each time unit
-        control = (control + 1) % 5;
-        System.out.println("sw1:" + control);
-        clearLED();
-        if (control == 0) {
-            Calendar cal = Calendar.getInstance();
-            cal.set(Calendar.HOUR_OF_DAY, timeset[0] * 10 + timeset[1]);
-            cal.set(Calendar.MINUTE, timeset[2] * 10 + timeset[3]);
-            System.out.println("set time=" + cal.getTime());
-            Spot.getInstance().getPowerController().setTime(cal.getTime().getTime());
-            timerSetting = false;
-        } else {
-            if (!timerSetting) {
-                Calendar cal = Calendar.getInstance();
-                System.out.println("get Time=" + cal.getTime());
-                int h = cal.get(Calendar.HOUR_OF_DAY);
-                int m = cal.get(Calendar.MINUTE);
-                timeset[0] = h / 10;
-                timeset[1] = h % 10;
-                timeset[2] = m / 10;
-                timeset[3] = m % 10;
-                timerSetting = true;
-            }
-            setLED(control - 1, LEDColor.RED);
-            displayTimeUnit(timeset[control - 1]);
-        }
-    }
-
-    /**
-     * increase each time unit by press switch 2 if in time setting mode.
-     */
-    private void increaseTimeUnit() {
-        //increase the time unit
-        if (control == 0) {
-            return;
-        }
-        System.out.println("sw2:" + control);
-        switch (control) {
-            case 1:
-                timeset[control - 1] = (timeset[control - 1] + 1) % 3;
-                break;
-            case 3:
-                timeset[control - 1] = (timeset[control - 1] + 1) % 6;
-                break;
-            case 2:
-                if (timeset[0] == 2) {
-                    timeset[control - 1] = (timeset[control - 1] + 1) % 4;
-                } else {
-                    timeset[control - 1] = (timeset[control - 1] + 1) % 10;
-                }
-                break;
-            case 4:
-                timeset[control - 1] = (timeset[control - 1] + 1) % 10;
-                break;
-        }
-        printTimeSet();
-        displayTimeUnit(timeset[control - 1]);
-    }
-
-    /**
-     * convert current time (HH:MM) to a string
-     * @return
-     */
-    private String getTimeText() {
-        Calendar cal = Calendar.getInstance();
-        String time = formatTimeUnit(cal.get(Calendar.HOUR_OF_DAY)) + ":" + formatTimeUnit(cal.get(Calendar.MINUTE));
-        System.out.println("get TimeText=" + time);
-        return time;
-    }
-
-    /**
-     * Print timeSet array for logs
-     */
-    private void printTimeSet() {
-        for (int i = 0; i < timeset.length; i++) {
-            System.out.print(timeset[i]);
-        }
-        System.out.println();
-    }
-
-    /**
-     * Turn off the LEDs
-     */
-    private void clearLED() {
-        for (int i = 0; i < 8; i++) {
-            leds[i].setOff();
-        }
-    }
-
-    /**
-     * Set the color of one led by its index
-     * @param index
-     * @param color
-     */
-    private void setLED(int index, LEDColor color) {
-        leds[index].setColor(color);
-        if (!leds[index].isOn()) {
-            leds[index].setOn();
-        }
-    }
-
-    /**
-     * Display binary format of the number n with LED
-     * @param n
-     */
-    private void displayTimeUnit(int n) {
-        for (int i = 4; i < 8; i++) {
-            leds[i].setOff();
-        }
-        System.out.println("display time unit:" + n);
-        for (int i = 0; i < 4; i++) {
-            if ((n & 1) == 1) {
-                setLED(7 - i, LEDColor.GREEN);
-                System.out.println("display time unit set led:" + (7 - i));
-            }
-            n = n >> 1;
-        }
-    }
-
-    /**
-     * Format an integer to a string. If the integer is less than 10, it will append "0" as a prifix.
-     * For example, 6 => "06" and 55 => "55"
-     * @param unit
-     * @return
-     */
-    private String formatTimeUnit(int unit) {
-        return (unit < 10 ? "0" : "") + unit;
-    }
+    
 }
