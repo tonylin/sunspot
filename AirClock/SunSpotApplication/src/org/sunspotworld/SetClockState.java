@@ -6,6 +6,10 @@ import com.sun.spot.sensorboard.peripheral.IAccelerometer3DThresholdListener;
 import com.sun.spot.sensorboard.peripheral.LEDColor;
 import java.util.Calendar;
 
+/**
+ * This class represents the "Set Clock Time" state, where the user is able 
+ * to modify the current time to be displayed in the "clock" mode.
+ */
 public class SetClockState implements IState {
 
     protected StartApplication app;
@@ -15,12 +19,22 @@ public class SetClockState implements IState {
     private double previous_Z;
     private double previous_X;
     
+    /**
+     * Constructor
+     * @param app
+     */
     public SetClockState( StartApplication app ){
         this.app = app;
     }
     
     /**
-     * Cycle through the various "time units"
+     * Cycle through the various "time units" to edit the time.
+     * Ie. Assuming the current time is: 18:45
+     * 1st click: 1
+     * 2nd click: 8
+     * 3rd click: 4
+     * 4th click: 5
+     * 5th click: save time and go back to "display clock/time" state.
      */
     public void switch1(){
        control = (control + 1) % 5;
@@ -37,12 +51,16 @@ public class SetClockState implements IState {
     }
 
     /** 
-     * Increase the unit number
+     * Edit the time (incrementally) for the current cursor position
+     * (defined by switch 1)
      */
     public void switch2(){
         increaseTimeUnit();
     }
 
+    /**
+     * Defines how the accelerometer will be used to help set the time.
+     */
     public void run(){
         System.out.println( "I'm now setting the clock!!");
         //Add accelerometer listener
@@ -88,6 +106,9 @@ public class SetClockState implements IState {
         });
     }
     
+    /**
+     * Save the time the user introduced.
+     */
     private void saveTime(){
         Calendar cal = Calendar.getInstance();
         cal.set(Calendar.HOUR_OF_DAY, timeset[0] * 10 + timeset[1]);
@@ -97,7 +118,7 @@ public class SetClockState implements IState {
     }
         
     /**
-     * increase each time unit by press switch 2 if in time setting mode.
+     * Increase each time unit by press switch 2 if in time setting mode.
      */
     private void increaseTimeUnit() {
         //increase the time unit
@@ -149,6 +170,9 @@ public class SetClockState implements IState {
 //        }
     }
     
+    /**
+     * Turn off all the leds
+     */
     private void clearLED() {
         for (int i = 0; i < 8; i++) {
             app.leds[i].setOff();

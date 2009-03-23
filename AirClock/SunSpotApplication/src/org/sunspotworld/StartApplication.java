@@ -29,11 +29,11 @@ public class StartApplication extends MIDlet {
     
     private final ISwitch sw1 = EDemoBoard.getInstance().getSwitches()[0];
     private final ISwitch sw2 = EDemoBoard.getInstance().getSwitches()[1];
-    
+
+    // Constants to identify the state of the application.
     public final int STATE_CLOCK = 0;
     public final int STATE_SET_CLOCK = 1;
     public final int STATE_SET_TIMER = 2;
-    
     
     private IState currentState;
     private ClockState clock = new ClockState(this);
@@ -48,6 +48,7 @@ public class StartApplication extends MIDlet {
     protected void startApp() throws MIDletStateChangeException {
         System.out.println("StartApp");
         // Adding the listeners for the switches.
+        // When the switches are pressed, each program state is responsible for handling the events.
         sw1.addISwitchListener(new ISwitchListener() {
 
             public void switchPressed(ISwitch sw) {
@@ -69,6 +70,7 @@ public class StartApplication extends MIDlet {
             }
         });
         
+        // Start the program in the clock state
         changeState( STATE_CLOCK );
     }
     
